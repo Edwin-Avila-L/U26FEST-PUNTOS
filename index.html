@@ -250,7 +250,7 @@
         <!-- =============================================================== -->
         <section id="adminDashboardSection" class="hidden mb-10">
             <div class="poster-card-indigo rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 relative overflow-hidden">
-                <div class="flex flex-wrap items-center justify-between gap-3 pb-4 mb-6 border-b-2 border-u26-cream/20">
+                <div class="flex flex-wrap items-center justify-between gap-3 pb-4 mb-5 border-b-2 border-u26-cream/20">
                     <div class="flex items-center gap-3">
                         <div class="w-12 h-12 rounded-2xl bg-u26-orange text-u26-cream flex items-center justify-center font-extrabold border-2 border-u26-cream shrink-0">
                             <i data-lucide="shield-check" class="w-6 h-6"></i>
@@ -271,6 +271,30 @@
                     </div>
                     <button onclick="closeAdminPanel()" class="bg-u26-orange hover:bg-red-600 text-white font-bold px-4 py-2.5 rounded-xl text-xs uppercase tracking-wider flex items-center gap-1.5 border-2 border-u26-cream">
                         <i data-lucide="log-out" class="w-4 h-4"></i> Cerrar Sesión Admin
+                    </button>
+                </div>
+
+                <!-- INTERRUPTOR GLOBAL PARA HABILITAR O CERRAR RECEPCIÓN DE RECLAMACIONES -->
+                <div class="bg-u26-cream text-u26-indigo rounded-2xl p-4 sm:p-5 border-4 border-u26-yellow mb-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+                    <div class="flex items-start sm:items-center gap-3.5">
+                        <div id="claimsToggleIconBox" class="w-12 h-12 rounded-2xl bg-u26-green text-white flex items-center justify-center shrink-0 border-2 border-u26-indigo">
+                            <i data-lucide="unlock" class="w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="text-xs font-extrabold uppercase tracking-wider text-u26-indigo/70">Recepción de Nuevas Reclamaciones:</span>
+                                <span id="claimsStatusAdminBadge" class="bg-u26-green text-white text-xs font-extrabold px-3 py-0.5 rounded-full uppercase">
+                                    ABIERTAS (HABILITADAS)
+                                </span>
+                            </div>
+                            <p id="claimsStatusAdminDesc" class="text-xs font-bold text-u26-indigo/80 mt-1">
+                                Los estudiantes con menos de 18 puntos pueden enviar su única reclamación en este momento.
+                            </p>
+                        </div>
+                    </div>
+                    <button id="toggleClaimsReceptionBtn" onclick="toggleClaimsReceptionState()" class="poster-btn bg-u26-orange hover:bg-red-600 text-white font-display font-extrabold px-5 py-3 rounded-xl text-xs sm:text-sm uppercase shrink-0 flex items-center justify-center gap-2">
+                        <i data-lucide="lock" class="w-4 h-4"></i>
+                        <span>Cerrar Recepción de Reclamaciones</span>
                     </button>
                 </div>
 
@@ -429,7 +453,7 @@
 
                 <p class="text-[11px] sm:text-xs font-semibold text-u26-indigo/75 text-center mt-3.5 flex items-center justify-center gap-1.5 flex-wrap">
                     <i data-lucide="clock" class="w-3.5 h-3.5 text-u26-orange shrink-0"></i>
-                    <span>Horario de reclamaciones: del <b>3 al 6 de noviembre</b>, de 8:00 a.m. a 11:30 a.m. y de 2:30 p.m. a 4:30 p.m. (Máximo 1 reclamación por estudiante).</span>
+                    <span id="publicScheduleNoticeText">Horario de reclamaciones: del <b>3 al 6 de noviembre</b>, de 8:00 a.m. a 11:30 a.m. y de 2:30 p.m. a 4:30 p.m. (Máximo 1 reclamación por estudiante).</span>
                 </p>
             </div>
 
@@ -448,7 +472,7 @@
                 <p class="text-xs sm:text-sm font-semibold text-u26-indigo/80 mb-2">
                     Ingresa tu código estudiantil para verificar la respuesta a tu solicitud (incluso si tus puntos ya fueron actualizados a 18 o más).
                 </p>
-                <p class="text-[11px] font-bold text-u26-indigo/70 mb-4 bg-u26-indigo/5 px-3 py-2 rounded-xl border border-u26-indigo/15">
+                <p id="publicTab2ScheduleNotice" class="text-[11px] font-bold text-u26-indigo/70 mb-4 bg-u26-indigo/5 px-3 py-2 rounded-xl border border-u26-indigo/15">
                     📌 Horario de atención de reclamaciones: del <b>3 al 6 de noviembre</b>, de 8:00 a.m. a 11:30 a.m. y de 2:30 p.m. a 4:30 p.m. Solo se permite realizar <b>una (1) reclamación</b> por estudiante para quienes tengan menos de 18 puntos.
                 </p>
 
@@ -597,6 +621,7 @@
     <script>
         const CREDIT_MIN_POINTS = 18;
         const CLAIMS_PER_PAGE = 5;
+        const CONFIG_SENTINEL_CODE = -999; // Registro especial para sincronizar en Google Sheets si las reclamaciones están abiertas o cerradas
         const CLOUD_API_URL = "https://script.google.com/macros/s/AKfycbxkYiwflrV6Yo64L4bjnTn3UKfdKSKGSiJglHgp3TEYyl-nJLIxcDqayxOXoRV9BOwr/exec";
 
         let currentAdminUser = null;
@@ -605,6 +630,10 @@
         let currentAdminClaimPage = 1;
         let currentAdminClaimFilter = 'all';
 
+        /*__START_CLAIMS_STATE__*/
+        let isClaimsPeriodOpen = true;
+        /*__END_CLAIMS_STATE__*/
+
         /*__START_DB__*/
         let studentsDatabase = [];
         /*__END_DB__*/
@@ -612,6 +641,120 @@
         /*__START_CLAIMS__*/
         let claimsDatabase = [];
         /*__END_CLAIMS__*/
+
+        // =========================================================================
+        // GESTIÓN DEL ESTADO ABIERTO / CERRADO DE RECLAMACIONES
+        // =========================================================================
+        function extractClaimsConfigAndFilter(rawClaimsArray) {
+            if (!Array.isArray(rawClaimsArray)) return [];
+            const normalClaims = [];
+            rawClaimsArray.forEach(item => {
+                const cCode = parseInt(item.codigo || item['Código'] || 0, 10);
+                if (cCode === CONFIG_SENTINEL_CODE) {
+                    const statusText = String(item.reclamacion || "").trim().toUpperCase();
+                    if (statusText === "CLOSED") {
+                        isClaimsPeriodOpen = false;
+                    } else if (statusText === "OPEN") {
+                        isClaimsPeriodOpen = true;
+                    }
+                } else {
+                    normalClaims.push(item);
+                }
+            });
+            return normalClaims;
+        }
+
+        function buildClaimsPayloadWithConfig(cleanClaimsList) {
+            const configRow = {
+                "codigo": CONFIG_SENTINEL_CODE,
+                "reclamacion": isClaimsPeriodOpen ? "OPEN" : "CLOSED",
+                "hora de reclamación": getFormattedTimestamp(),
+                "respuesta": currentAdminUser ? `[ADMIN:${currentAdminUser}] Estado actualizado` : "",
+                "hora de la respuesta": getFormattedTimestamp()
+            };
+            return [configRow, ...cleanClaimsList];
+        }
+
+        function updateClaimsReceptionUI() {
+            const badge = document.getElementById('claimsStatusAdminBadge');
+            const desc = document.getElementById('claimsStatusAdminDesc');
+            const btn = document.getElementById('toggleClaimsReceptionBtn');
+            const iconBox = document.getElementById('claimsToggleIconBox');
+            const publicNotice1 = document.getElementById('publicScheduleNoticeText');
+            const publicNotice2 = document.getElementById('publicTab2ScheduleNotice');
+
+            if (isClaimsPeriodOpen) {
+                if (badge) {
+                    badge.textContent = "ABIERTAS (RECIBIENDO RECLAMOS)";
+                    badge.className = "bg-u26-green text-white text-xs font-extrabold px-3 py-0.5 rounded-full uppercase";
+                }
+                if (desc) {
+                    desc.textContent = "Los estudiantes con menos de 18 puntos pueden radicar su única reclamación en este momento.";
+                }
+                if (iconBox) {
+                    iconBox.className = "w-12 h-12 rounded-2xl bg-u26-green text-white flex items-center justify-center shrink-0 border-2 border-u26-indigo";
+                    iconBox.innerHTML = `<i data-lucide="unlock" class="w-6 h-6"></i>`;
+                }
+                if (btn) {
+                    btn.className = "poster-btn bg-u26-orange hover:bg-red-600 text-white font-display font-extrabold px-5 py-3 rounded-xl text-xs sm:text-sm uppercase shrink-0 flex items-center justify-center gap-2";
+                    btn.innerHTML = `<i data-lucide="lock" class="w-4 h-4"></i><span>Cerrar Recepción de Reclamaciones</span>`;
+                }
+                if (publicNotice1) {
+                    publicNotice1.innerHTML = `Horario de reclamaciones: del <b>3 al 6 de noviembre</b>, de 8:00 a.m. a 11:30 a.m. y de 2:30 p.m. a 4:30 p.m. (Máximo 1 reclamación por estudiante).`;
+                }
+                if (publicNotice2) {
+                    publicNotice2.innerHTML = `📌 Horario de atención de reclamaciones: del <b>3 al 6 de noviembre</b>, de 8:00 a.m. a 11:30 a.m. y de 2:30 p.m. a 4:30 p.m. Solo se permite realizar <b>una (1) reclamación</b> por estudiante para quienes tengan menos de 18 puntos.`;
+                }
+            } else {
+                if (badge) {
+                    badge.textContent = "CERRADAS (PLAZO FINALIZADO)";
+                    badge.className = "bg-u26-orange text-white text-xs font-extrabold px-3 py-0.5 rounded-full uppercase";
+                }
+                if (desc) {
+                    desc.textContent = "El formulario para enviar nuevas reclamaciones está bloqueado para todos los estudiantes. Solo pueden consultar respuestas.";
+                }
+                if (iconBox) {
+                    iconBox.className = "w-12 h-12 rounded-2xl bg-u26-orange text-white flex items-center justify-center shrink-0 border-2 border-u26-indigo";
+                    iconBox.innerHTML = `<i data-lucide="lock" class="w-6 h-6"></i>`;
+                }
+                if (btn) {
+                    btn.className = "poster-btn bg-u26-green hover:bg-u26-indigo text-white font-display font-extrabold px-5 py-3 rounded-xl text-xs sm:text-sm uppercase shrink-0 flex items-center justify-center gap-2";
+                    btn.innerHTML = `<i data-lucide="unlock" class="w-4 h-4"></i><span>Habilitar Recepción de Reclamaciones</span>`;
+                }
+                if (publicNotice1) {
+                    publicNotice1.innerHTML = `🔒 <b>El periodo para radicar nuevas reclamaciones ha finalizado.</b> Si enviaste una reclamación previamente, puedes consultar su respuesta en la pestaña 2.`;
+                }
+                if (publicNotice2) {
+                    publicNotice2.innerHTML = `🔒 <b>El plazo para radicar nuevas reclamaciones ha finalizado.</b> Aquí puedes consultar la respuesta oficial si radicaste una reclamación dentro del horario establecido.`;
+                }
+            }
+            lucide.createIcons();
+        }
+
+        async function toggleClaimsReceptionState() {
+            if (!currentSessionSecret) {
+                alert("Debes iniciar sesión como administrador para cambiar este ajuste.");
+                return;
+            }
+            isClaimsPeriodOpen = !isClaimsPeriodOpen;
+            updateClaimsReceptionUI();
+
+            // Si había un estudiante consultado en pantalla, refrescar su vista para ocultar/mostrar el botón
+            const currentInput = document.getElementById('studentCodeInput')?.value.trim();
+            if (currentInput) searchStudent();
+
+            const stateLabel = isClaimsPeriodOpen ? "HABILITADAS" : "CERRADAS";
+            showAdminAlert(`Actualizando estado a Reclamaciones ${stateLabel} en Google Sheets...`);
+            const ok = await postToCloud({
+                action: "sync_claims",
+                claims: buildClaimsPayloadWithConfig(claimsDatabase)
+            });
+            if (ok) {
+                showAdminAlert(`¡Listo! Las reclamaciones ahora están ${stateLabel} para todos los estudiantes.`);
+            } else {
+                showAdminAlert("Estado cambiado localmente. Recuerda también usar el botón 4 ('Descargar index.html') si deseas actualizar el archivo fijo en GitHub.");
+            }
+        }
 
         // =========================================================================
         // CONFETI EXCLUSIVO PARA VOLUNTARIOS
@@ -784,13 +927,13 @@
         }
 
         function mergeDuplicateClaims(rawClaimsList) {
-            if (!Array.isArray(rawClaimsList)) return { mergedList: [], hadDuplicates: false };
+            const filteredInput = extractClaimsConfigAndFilter(rawClaimsList);
             const mapByCode = new Map();
             let hadDuplicates = false;
 
-            rawClaimsList.forEach(item => {
+            filteredInput.forEach(item => {
                 const code = parseInt(item.codigo || item['Código'] || 0, 10);
-                if (!code || isNaN(code)) return;
+                if (!code || isNaN(code) || code <= 0) return;
 
                 const texto = String(item.reclamacion || item['Reclamación'] || "").trim();
                 const horaRec = String(item['hora de reclamación'] || "").trim();
@@ -889,6 +1032,7 @@
                 claimsDatabase = mergedList;
             }
             updateHeaderCounter();
+            updateClaimsReceptionUI();
             renderLeaderboard();
             hideLoadingScreen();
         }
@@ -1033,6 +1177,7 @@
                     document.getElementById('currentAdminInlineName').textContent = currentAdminUser;
 
                     updateHeaderCounter();
+                    updateClaimsReceptionUI();
                     renderAdminClaimsTable();
                     lucide.createIcons();
                     document.getElementById('adminDashboardSection').scrollIntoView({ behavior: 'smooth' });
@@ -1075,7 +1220,7 @@
                     const perStudentSheetMax = {};
                     const volunteerCodesSet = new Set();
                     const organizerCodesSet = new Set();
-                    const sedeCodesMap = new Map(); // codigo -> nombreSede ("Málaga", "Barbosa", "Barrancabermeja", "Socorro")
+                    const sedeCodesMap = new Map();
 
                     workbook.SheetNames.forEach(sheetName => {
                         const worksheet = workbook.Sheets[sheetName];
@@ -1228,17 +1373,29 @@
             container.classList.remove('hidden');
 
             if (!student) {
-                const actionIfNotFound = existingClaim ? `
-                    <button onclick="document.getElementById('claimCheckCodeInput').value=${codeNum}; switchPublicTab('reclamos'); checkClaimStatusByCode();" class="poster-btn bg-u26-indigo text-u26-yellow font-display font-extrabold px-6 py-3.5 rounded-xl text-sm uppercase inline-flex items-center justify-center gap-2 w-full sm:w-auto">
-                        <i data-lucide="message-square-check" class="w-5 h-5"></i>
-                        Ver Estado de Mi Reclamación
-                    </button>
-                ` : `
-                    <button onclick="openClaimModal(${codeNum})" class="poster-btn bg-u26-orange text-white font-display font-extrabold px-6 py-3.5 rounded-xl text-sm uppercase inline-flex items-center justify-center gap-2 w-full sm:w-auto">
-                        <i data-lucide="message-square-warning" class="w-5 h-5"></i>
-                        Hacer Única Reclamación
-                    </button>
-                `;
+                let actionIfNotFound = '';
+                if (existingClaim) {
+                    actionIfNotFound = `
+                        <button onclick="document.getElementById('claimCheckCodeInput').value=${codeNum}; switchPublicTab('reclamos'); checkClaimStatusByCode();" class="poster-btn bg-u26-indigo text-u26-yellow font-display font-extrabold px-6 py-3.5 rounded-xl text-sm uppercase inline-flex items-center justify-center gap-2 w-full sm:w-auto">
+                            <i data-lucide="message-square-check" class="w-5 h-5"></i>
+                            Ver Estado de Mi Reclamación
+                        </button>
+                    `;
+                } else if (isClaimsPeriodOpen) {
+                    actionIfNotFound = `
+                        <button onclick="openClaimModal(${codeNum})" class="poster-btn bg-u26-orange text-white font-display font-extrabold px-6 py-3.5 rounded-xl text-sm uppercase inline-flex items-center justify-center gap-2 w-full sm:w-auto">
+                            <i data-lucide="message-square-warning" class="w-5 h-5"></i>
+                            Hacer Única Reclamación
+                        </button>
+                    `;
+                } else {
+                    actionIfNotFound = `
+                        <div class="inline-flex items-center gap-2 bg-u26-indigo text-u26-cream font-display font-extrabold px-5 py-3 rounded-xl text-xs sm:text-sm uppercase">
+                            <i data-lucide="lock" class="w-4 h-4 text-u26-yellow"></i>
+                            <span>El periodo de recepción de reclamaciones ha finalizado</span>
+                        </div>
+                    `;
+                }
 
                 container.innerHTML = `
                     <div class="poster-card rounded-2xl sm:rounded-3xl p-5 sm:p-8 text-center border-4 border-u26-orange">
@@ -1249,7 +1406,7 @@
                             CÓDIGO ${codeNum} NO ENCONTRADO (0 PUNTOS)
                         </h3>
                         <p class="text-xs sm:text-sm font-semibold text-u26-indigo/80 max-w-md mx-auto mb-5">
-                            No apareces con puntos registrados. ${existingClaim ? 'Ya tienes una reclamación registrada; puedes consultar su respuesta abajo:' : 'Puedes radicar tu única reclamación dentro del horario establecido:'}
+                            No apareces con puntos registrados. ${existingClaim ? 'Ya tienes una reclamación registrada; puedes consultar su respuesta abajo:' : (isClaimsPeriodOpen ? 'Puedes radicar tu única reclamación dentro del horario establecido:' : 'El plazo para radicar nuevas reclamaciones ya se encuentra cerrado.')}
                         </p>
                         ${actionIfNotFound}
                     </div>
@@ -1268,7 +1425,6 @@
             const missingPoints = achievesCredit ? 0 : Math.max(0, CREDIT_MIN_POINTS - student.puntos);
             const progressPct = achievesCredit ? 100 : Math.min(100, Math.round((student.puntos / CREDIT_MIN_POINTS) * 100));
 
-            // El confeti es EXCLUSIVO para voluntarios
             if (isVolunteer) {
                 launchVolunteerConfetti();
             }
@@ -1328,7 +1484,6 @@
                 `;
             }).join('');
 
-            //Construcción de avisos personalizados según la hoja a la que pertenezca
             const specialBanners = [];
 
             if (isVolunteer) {
@@ -1424,7 +1579,7 @@
                             </div>
                         </div>
                     `;
-                } else {
+                } else if (isClaimsPeriodOpen) {
                     creditBannerHtml = `
                         <div class="bg-u26-orange/15 border-3 sm:border-4 border-u26-orange rounded-2xl p-4 sm:p-5 mb-5 sm:mb-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
                             <div class="flex items-start gap-3">
@@ -1448,6 +1603,25 @@
                                 <i data-lucide="file-warning" class="w-5 h-5"></i>
                                 <span>Hacer Reclamación</span>
                             </button>
+                        </div>
+                    `;
+                } else {
+                    creditBannerHtml = `
+                        <div class="bg-u26-indigo/10 border-3 sm:border-4 border-u26-indigo rounded-2xl p-4 sm:p-5 mb-5 sm:mb-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+                            <div class="flex items-start gap-3">
+                                <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-u26-indigo text-u26-yellow flex items-center justify-center shrink-0 border-2 border-u26-indigoDark mt-0.5">
+                                    <i data-lucide="lock" class="w-6 h-6"></i>
+                                </div>
+                                <div>
+                                    <span class="bg-u26-indigo text-u26-cream text-[10px] sm:text-[11px] font-extrabold px-2.5 py-0.5 rounded-full uppercase">Reclamaciones Cerradas</span>
+                                    <h4 class="font-display text-base sm:text-lg md:text-xl font-extrabold text-u26-indigo mt-1 leading-snug">
+                                        TE FALTARON ${missingPoints} PUNTOS PARA CUMPLIR LOS REQUISITOS DE LA ASIGNATURA ESPECIAL
+                                    </h4>
+                                    <p class="text-xs font-bold text-u26-indigo/80 mt-1">
+                                        🔒 El periodo oficial para radicar nuevas reclamaciones ha finalizado.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     `;
                 }
@@ -1485,14 +1659,13 @@
                             </div>
                         ` : `
                             <p class="mt-2.5 text-xs font-bold text-u26-indigo/70">
-                                Tu reclamación está en revisión. Horario de atención: del 3 al 6 de noviembre (8:00 a.m. - 11:30 a.m. y 2:30 p.m. - 4:30 p.m.).
+                                Tu reclamación está en revisión por parte del comité organizador.
                             </p>
                         `}
                     </div>
                 `;
             }
 
-            // Etiquetas superiores y resumen de progreso según rol/sede
             let roleBadgeHtml = `
                 <span class="bg-u26-pink text-u26-indigo font-display font-extrabold px-2.5 py-1 rounded-lg text-xs uppercase border-2 border-u26-indigoDark">
                     PUESTO #${rankPosition}
@@ -1591,7 +1764,7 @@
         }
 
         // ============================================================
-        // RECLAMACIONES PÚBLICAS
+        // RECLAMACIONES PÚBLICAS (CON VALIDACIÓN DE PERIODO ABIERTO/CERRADO)
         // ============================================================
         function openClaimModal(code) {
             if (!isDataReady) return;
@@ -1604,6 +1777,11 @@
                 switchPublicTab('reclamos');
                 document.getElementById('claimCheckCodeInput').value = codeNum;
                 checkClaimStatusByCode();
+                return;
+            }
+
+            if (!isClaimsPeriodOpen) {
+                alert("El periodo oficial para recibir nuevas reclamaciones se encuentra cerrado.");
                 return;
             }
 
@@ -1629,6 +1807,12 @@
         async function submitModalClaim(e) {
             e.preventDefault();
             if (!isDataReady) return;
+            if (!isClaimsPeriodOpen) {
+                alert("El periodo de recepción de reclamaciones ha finalizado.");
+                closeClaimModal();
+                return;
+            }
+
             const codeNum = parseInt(document.getElementById('modalClaimCode').value, 10);
             const text = document.getElementById('modalClaimText').value.trim();
             if (!codeNum || !text) return;
@@ -1721,7 +1905,7 @@
                              <p class="text-sm font-bold text-u26-indigo whitespace-pre-line break-words">${decoded.cleanText}</p>
                            </div>`
                         : `<div class="mt-3 bg-u26-indigo/5 border-2 border-dashed border-u26-indigo/30 rounded-xl p-3 text-xs font-bold text-u26-indigo/70">
-                             Tu única reclamación ya fue recibida y será respondida en el horario establecido (3 al 6 de noviembre, de 8:00 a.m. a 11:30 a.m. y de 2:30 p.m. a 4:30 p.m.).
+                             Tu única reclamación ya fue recibida y se encuentra en revisión por el comité organizador.
                            </div>`;
 
                     return `
@@ -1744,7 +1928,6 @@
 
             if (student && fulfills) {
                 const cleanName = sanitizeStudentName(student.nombre, student.codigo);
-                // Confeti SOLO si es voluntario
                 if (isVol) launchVolunteerConfetti();
 
                 let customMsg = `¡El código ${codeNum} (${cleanName}) ya tiene ${student.puntos} puntos!`;
@@ -1763,6 +1946,20 @@
                         </p>
                         <p class="text-xs font-bold text-u26-indigo/80 mt-1">
                             Ya cumpliste los requisitos para la asignatura especial, por lo que no requieres hacer reclamaciones.
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+
+            if (!isClaimsPeriodOpen) {
+                box.innerHTML = `
+                    <div class="bg-white border-3 border-u26-indigo rounded-2xl p-5 sm:p-6 text-center">
+                        <p class="font-display font-extrabold text-base sm:text-lg text-u26-indigo">
+                            No tienes ninguna reclamación registrada con el código ${codeNum}
+                        </p>
+                        <p class="text-xs font-bold text-u26-orange mt-1.5">
+                            🔒 El periodo oficial de recepción de nuevas reclamaciones ha finalizado.
                         </p>
                     </div>
                 `;
@@ -2039,7 +2236,10 @@
             renderAdminClaimsTable();
 
             showAdminAlert(`Guardando respuesta de ${signer} en Google Sheets...`);
-            const ok = await postToCloud({ action: "sync_claims", claims: claimsDatabase });
+            const ok = await postToCloud({
+                action: "sync_claims",
+                claims: buildClaimsPayloadWithConfig(claimsDatabase)
+            });
             if (ok) {
                 showAdminAlert(`¡Respuesta registrada por ${signer} para el código ${claimsDatabase[index].codigo}!`);
             } else {
@@ -2052,7 +2252,10 @@
             claimsDatabase = mergedList;
             renderAdminClaimsTable();
             showAdminAlert("Unificando reclamaciones duplicadas por código en Google Sheets...");
-            await postToCloud({ action: "sync_claims", claims: claimsDatabase });
+            await postToCloud({
+                action: "sync_claims",
+                claims: buildClaimsPayloadWithConfig(claimsDatabase)
+            });
             showAdminAlert(`¡Listo! Ahora hay ${claimsDatabase.length} reclamaciones únicas consolidadas en la nube.`);
         }
 
@@ -2251,7 +2454,10 @@
                     claimsDatabase = mergedList;
 
                     renderAdminClaimsTable();
-                    await postToCloud({ action: "sync_claims", claims: claimsDatabase });
+                    await postToCloud({
+                        action: "sync_claims",
+                        claims: buildClaimsPayloadWithConfig(claimsDatabase)
+                    });
                     showAdminAlert(`¡Se importaron y unificaron ${claimsDatabase.length} reclamaciones únicas en la nube!`);
                 } catch (err) {
                     alert("Error al importar Excel: " + err.message);
@@ -2261,7 +2467,7 @@
         }
 
         // =========================================================================
-        // EXPORTAR HTML PÚBLICO LIMPIO
+        // EXPORTAR HTML PÚBLICO LIMPIO (CONSERVANDO SI RECLAMOS ESTÁN ABIERTOS/CERRADOS)
         // =========================================================================
         function downloadPublicWebApp() {
             const clone = document.documentElement.cloneNode(true);
@@ -2296,6 +2502,10 @@
             });
 
             let fullHtml = clone.outerHTML;
+
+            const stateScriptString = `/*__START_CLAIMS_STATE__*/\nlet isClaimsPeriodOpen = ${JSON.stringify(isClaimsPeriodOpen)};\n/*__END_CLAIMS_STATE__*/`;
+            fullHtml = fullHtml.replace(/\/\*__START_CLAIMS_STATE__\*\/[\s\S]*?\/\*__END_CLAIMS_STATE__\*\//, stateScriptString);
+
             const dbScriptString = `/*__START_DB__*/\nlet studentsDatabase = ${JSON.stringify(studentsDatabase)};\n/*__END_DB__*/`;
             fullHtml = fullHtml.replace(/\/\*__START_DB__\*\/[\s\S]*?\/\*__END_DB__\*\//, dbScriptString);
 
@@ -2387,6 +2597,7 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             lucide.createIcons();
+            updateClaimsReceptionUI();
             fetchGlobalDataFromCloud();
         });
     </script>
